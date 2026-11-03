@@ -270,7 +270,7 @@ ${context || "(لا توجد مقتطفات مطابقة)"}`;
     const { generateChatCompletion } = await import("@lovable.dev/ai-gateway");
     try {
       const res = await generateChatCompletion({
-        model: "openai/gpt-6-astra",
+        model: "google/gemini-3-flash-preview",
         reasoning_effort: "low",
         messages: [{ role: "system", content: system }, ...data.messages],
       });

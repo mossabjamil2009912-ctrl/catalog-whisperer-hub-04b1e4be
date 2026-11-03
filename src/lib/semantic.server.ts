@@ -1,7 +1,7 @@
 // Server-only helpers for meaning-based (semantic) catalog search.
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
 export const EMBED_MODEL = "google/gemini-embedding-2";
-const UNDERSTAND_MODEL = "openai/gpt-6-astra";
+const UNDERSTAND_MODEL = "google/gemini-3-flash-preview";
 
 function key() {
   const k = process.env["LOVABLE_API_KEY"];
@@ -76,7 +76,7 @@ ${convo}`;
   try {
     const j = (await post("/chat/completions", {
       model: UNDERSTAND_MODEL,
-      reasoning_effort: "low",
+      reasoning_effort: "minimal",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_schema", json_schema: { name: "understanding", strict: true, schema: understandSchema } },
     })) as { choices?: { message?: { content?: string } }[] };
