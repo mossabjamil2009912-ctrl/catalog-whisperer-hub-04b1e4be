@@ -164,8 +164,26 @@ export async function runAssistant(data: { messages: Msg[] }) {
       sb.from("catalogs").select("id,title,keywords"),
       ...(parts.length > 1 ? parts.slice(0, 4).map((p) => sb.rpc("search_chunks", { q: p, lim: 7 })) : []),
     ]);
+    // Always add every English/clean chunk of the top matching catalogs so no spec (e.g. MPPT) is missed.
+    const base = [...(a ?? []), ...((b as typeof a) ?? []), ...partRes.flatMap((r) => (r.data as typeof a) ?? [])];
+    const topIds: string[] = [];
+    for (const r of [a ?? [], ...partRes.map((r) => (r.data as typeof a) ?? [])]) {
+      for (const c of r.slice(0, 2)) if (!topIds.includes(c.catalog_id)) topIds.push(c.catalog_id);
+    }
+    const titleOf = new Map((cats ?? []).map((c) => [c.id as string, c.title as string]));
+    let full: typeof base = [];
+    if (topIds.length) {
+      const { data: rows } = await sb
+        .from("catalog_chunks")
+        .select("catalog_id,page,content")
+        .in("catalog_id", topIds.slice(0, 6));
+      const garbled = (t: string) => (t.match(/[\uFB50-\uFEFF]/g)?.length ?? 0) > 20 || (t.match(/\u202B|\u202C/g)?.length ?? 0) > 20;
+      full = (rows ?? [])
+        .filter((r) => !garbled(r.content))
+        .map((r) => ({ ...r, title: titleOf.get(r.catalog_id) ?? "", score: 0 }));
+    }
     const seen = new Set<string>();
-    const chunks = [...(a ?? []), ...((b as typeof a) ?? []), ...partRes.flatMap((r) => (r.data as typeof a) ?? [])].filter((c) => {
+    const chunks = [...full, ...base].filter((c) => {
       const k = `${c.catalog_id}-${c.page}-${c.content.slice(0, 40)}`;
       if (seen.has(k)) return false;
       seen.add(k);
