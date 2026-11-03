@@ -1,0 +1,1 @@
+ALTER TABLE public.catalogs ADD COLUMN language text NOT NULL DEFAULT 'ar';
