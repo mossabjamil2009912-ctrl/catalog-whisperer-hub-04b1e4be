@@ -194,14 +194,15 @@ export async function runAssistant(data: { messages: Msg[] }) {
         .map((r) => ({ ...r, title: titleOf.get(r.catalog_id) ?? "", score: 0 }));
     }
     const seen = new Set<string>();
+    const noisy = (t: string) => (t.match(/[\uFB50-\uFEFF]/g)?.length ?? 0) > 20 || (t.match(/\u202B|\u202C/g)?.length ?? 0) > 20;
     const chunks = [...full, ...base].filter((c) => {
+      if (full.length && noisy(c.content)) return false;
       const k = `${c.catalog_id}-${c.page}-${c.content.slice(0, 40)}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
     });
 
-    if (process.env.DEBUG_CTX) console.log("CTX", topIds, chunks.map((c) => c.title.slice(0, 30) + " p" + c.page + " " + c.content.slice(0, 30)));
     const context = chunks
       .map((c) => `[كتالوج: ${c.title} | id: ${c.catalog_id} | صفحة ${c.page}]\n${c.content}`)
       .join("\n\n---\n\n");
@@ -216,6 +217,8 @@ export async function runAssistant(data: { messages: Msg[] }) {
 - لا تذكر اسم الكتالوج ولا رقم الصفحة ولا أي مصدر.
 - عند طلب مقارنة أو اختيار الأفضل: قدّم مقارنة مختصرة في نقاط قصيرة (القدرة، الجهد، عدد MPPT أو السعة، الكفاءة، أهم ميزة) لكل منتج، ثم سطر واحد بالخلاصة. بدون مقدمات.
 - بعض النصوص العربية في المقتطفات قد تكون مشوشة الحروف؛ اعتمد على الأرقام والموديلات والنسخة الإنجليزية للمنتج نفسه.
+- اقرأ جداول المواصفات (DATASHEET) كاملة بعناية: القيم مرتبة بنفس ترتيب الموديلات في سطر Models، وقيمة واحدة تعني أنها مشتركة لكل الموديلات. مثال: "MPPT number / Max. input strings number 3/6 4/8" مع "Models 29.9K 30K 40K 50K" تعني 3 MPPT لـ29.9K و30K، و4 MPPT لـ40K و50K.
+- قبل أن تقول إن معلومة غير موجودة، ابحث عنها في كل المقتطفات الخاصة بذلك المنتج؛ لا تقل "غير موجودة" إذا كانت في أي مقتطف.
 - إذا لم تجد المعلومة فقل بوضوح إنها غير موجودة في الكتالوجات المتاحة.
 
 قائمة الكتالوجات المتاحة:
