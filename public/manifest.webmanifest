@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "مكتبة كتالوجات أكتس",
+  "short_name": "كتالوجات أكتس",
+  "description": "كل كتالوجات منتجات أكتس لأنظمة الطاقة في مكان واحد",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1f1f22",
+  "theme_color": "#1f1f22",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,1 @@
+CREATE POLICY "public read catalog files" ON storage.objects FOR SELECT TO anon, authenticated USING (bucket_id = 'catalogs');
