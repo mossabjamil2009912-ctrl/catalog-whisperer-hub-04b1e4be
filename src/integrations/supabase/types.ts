@@ -18,18 +18,21 @@ export type Database = {
         Row: {
           catalog_id: string
           content: string
+          embedding: string | null
           id: string
           page: number
         }
         Insert: {
           catalog_id: string
           content: string
+          embedding?: string | null
           id?: string
           page: number
         }
         Update: {
           catalog_id?: string
           content?: string
+          embedding?: string | null
           id?: string
           page?: number
         }
@@ -38,6 +41,41 @@ export type Database = {
             foreignKeyName: "catalog_chunks_catalog_id_fkey"
             columns: ["catalog_id"]
             isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_profiles: {
+        Row: {
+          catalog_id: string
+          embedding: string | null
+          specs: Json
+          summary_ar: string
+          summary_en: string
+          updated_at: string
+        }
+        Insert: {
+          catalog_id: string
+          embedding?: string | null
+          specs?: Json
+          summary_ar?: string
+          summary_en?: string
+          updated_at?: string
+        }
+        Update: {
+          catalog_id?: string
+          embedding?: string | null
+          specs?: Json
+          summary_ar?: string
+          summary_en?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_profiles_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: true
             referencedRelation: "catalogs"
             referencedColumns: ["id"]
           },
@@ -113,6 +151,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      match_chunks: {
+        Args: { lim?: number; query_embedding: string }
+        Returns: {
+          catalog_id: string
+          content: string
+          page: number
+          score: number
+          title: string
+        }[]
+      }
+      match_profiles: {
+        Args: { lim?: number; query_embedding: string }
+        Returns: {
+          catalog_id: string
+          score: number
+          specs: Json
+          summary_ar: string
+          summary_en: string
+          title: string
+        }[]
+      }
       search_catalogs: {
         Args: { q: string }
         Returns: {
