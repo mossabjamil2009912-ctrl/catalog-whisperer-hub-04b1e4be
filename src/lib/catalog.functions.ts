@@ -158,29 +158,56 @@ export async function runAssistant(data: { messages: Msg[] }) {
       .filter((s) => s.length >= 2);
     const isCompare = parts.length > 1 || /قارن|مقارن|الفرق|افضل|أفضل|vs|compare/i.test(last);
 
-    const [{ data: a }, { data: b }, { data: cats }, ...partRes] = await Promise.all([
+    const sem = await import("@/lib/semantic.server");
+    const { fuseRanks } = await import("@/lib/rank");
+    type Hit = { catalog_id: string; title: string; page: number; content: string; score: number };
+    const [{ data: cats }, { data: profs }] = await Promise.all([
+      sb.from("catalogs").select("id,title,keywords"),
+      sb.from("catalog_profiles").select("catalog_id,specs"),
+    ]);
+    type Prof = { product_type?: string; models?: string[]; summary_en?: string; specs?: { model: string; key_specs: string }[] };
+    const profOf = new Map((profs ?? []).map((p) => [p.catalog_id as string, p.specs as Prof]));
+    const catLines = (cats ?? []).map((c) => {
+      const p = profOf.get(c.id);
+      return { id: c.id, line: `${c.title} | ${c.keywords} | ${p?.product_type ?? ""} | ${(p?.models ?? []).join(", ").slice(0, 200)}` };
+    });
+
+    // 1) Understand the question (meaning, dialect, follow-ups) + embed it, alongside keyword searches.
+    const embedText = [prev, last].filter(Boolean).join("\n");
+    const [u, qEmb, { data: a }, { data: b }, ...partRes] = await Promise.all([
+      sem.understandQuestion(data.messages, catLines),
+      sem.embed([embedText]).then((v) => v[0]).catch((e) => (console.error("embed", e), null)),
       sb.rpc("search_chunks", { q: last, lim: isCompare ? 6 : 7 }),
       prev ? sb.rpc("search_chunks", { q: `${prev} ${last}`, lim: 4 }) : Promise.resolve({ data: [] }),
-      sb.from("catalogs").select("id,title,keywords"),
       ...(parts.length > 1 ? parts.slice(0, 4).map((p) => sb.rpc("search_chunks", { q: p, lim: 7 })) : []),
     ]);
-    // Always add every English/clean chunk of the top matching catalogs so no spec (e.g. MPPT) is missed.
-    const base = [...(a ?? []), ...((b as typeof a) ?? []), ...partRes.flatMap((r) => (r.data as typeof a) ?? [])];
-    const topIds: string[] = [];
+    // 2) Semantic + cross-language searches.
+    const vec = qEmb ? sem.toVector(qEmb) : null;
+    const [semChunks, semProfs, enRes] = await Promise.all([
+      vec ? sb.rpc("match_chunks", { query_embedding: vec, lim: 12 }).then((r) => (r.data ?? []) as Hit[]) : Promise.resolve([] as Hit[]),
+      vec ? sb.rpc("match_profiles", { query_embedding: vec, lim: 6 }).then((r) => (r.data ?? []) as { catalog_id: string; score: number }[]) : Promise.resolve([]),
+      u?.search_query_en ? sb.rpc("search_chunks", { q: u.search_query_en, lim: 6 }).then((r) => (r.data ?? []) as Hit[]) : Promise.resolve([] as Hit[]),
+    ]);
+
+    const base: Hit[] = [...semChunks, ...((a as Hit[]) ?? []), ...((b as Hit[]) ?? []), ...enRes, ...partRes.flatMap((r) => (r.data as Hit[]) ?? [])];
     // Direct model match: brand + power number (e.g. "Solis 20" -> catalog whose keywords contain "20K").
-    for (const p of parts.length > 1 ? parts : [last]) {
-      const brand = p.match(/Deye|Solis|Pylontech|Suntech|HiTHIUM|Li Power/i)?.[0]?.toLowerCase();
+    const modelIds: string[] = [];
+    for (const p of [...(parts.length > 1 ? parts : [last]), u?.search_query_en ?? ""]) {
+      const brand = p.match(/Deye|Solis|Pylontech|Suntech|HiTHIUM|Li Power|FIDUS/i)?.[0]?.toLowerCase();
       const nums = p.match(/\d+(?:\.\d+)?/g) ?? [];
-      for (const c of cats ?? []) {
-        const hay = `${c.title} ${c.keywords}`.toLowerCase();
+      for (const c of catLines) {
+        const hay = c.line.toLowerCase();
         if (brand && !hay.includes(brand)) continue;
-        if (nums.some((n) => new RegExp(`(^|[^\\d.])${n}(k|kw|ah)?\\b`, "i").test(hay)) && !topIds.includes(c.id))
-          topIds.push(c.id);
+        if (nums.some((n) => new RegExp(`(^|[^\\d.])${n}(k|kw|kwh|ah|w)?\\b`, "i").test(hay)) && !modelIds.includes(c.id))
+          modelIds.push(c.id);
       }
     }
-    for (const r of [a ?? [], ...partRes.map((r) => (r.data as typeof a) ?? [])]) {
-      for (const c of r.slice(0, 2)) if (!topIds.includes(c.catalog_id)) topIds.push(c.catalog_id);
-    }
+    const ids = (r: { catalog_id: string }[] | null | undefined) => (r ?? []).map((x) => x.catalog_id);
+    const topIds = fuseRanks(
+      [u?.catalog_ids ?? [], modelIds.slice(0, 6), ids(semProfs), ids(semChunks), ids(a as Hit[]), ids(enRes)],
+      60,
+      [3, 1.5, 1.5, 1, 0.7, 0.7],
+    ).slice(0, u?.catalog_ids.length ? Math.max(4, u.catalog_ids.length) : 5);
     const titleOf = new Map((cats ?? []).map((c) => [c.id as string, c.title as string]));
     let full: typeof base = [];
     if (topIds.length) {
@@ -196,17 +223,26 @@ export async function runAssistant(data: { messages: Msg[] }) {
     const seen = new Set<string>();
     const noisy = (t: string) => (t.match(/[\uFB50-\uFEFF]/g)?.length ?? 0) > 20 || (t.match(/\u202B|\u202C/g)?.length ?? 0) > 20;
     const chunks = [...full, ...base].filter((c) => {
-      if (full.length && noisy(c.content)) return false;
+      if (noisy(c.content)) return false;
       const k = `${c.catalog_id}-${c.page}-${c.content.slice(0, 40)}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
-    });
+    }).slice(0, 60);
 
-    const context = chunks
-      .map((c) => `[كتالوج: ${c.title} | id: ${c.catalog_id} | صفحة ${c.page}]\n${c.content}`)
-      .join("\n\n---\n\n");
-    const list = (cats ?? []).map((c) => `- ${c.title}${c.keywords ? ` (${c.keywords})` : ""}`).join("\n");
+    const profileText = topIds
+      .map((id) => {
+        const p = profOf.get(id);
+        if (!p) return "";
+        return `[ملف المنتج: ${titleOf.get(id)}]\nType: ${p.product_type}\n${p.summary_en}\n${(p.specs ?? []).map((s) => `${s.model}: ${s.key_specs}`).join("\n")}`;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    const context = [profileText, chunks.map((c) => `[كتالوج: ${c.title} | id: ${c.catalog_id} | صفحة ${c.page}]\n${c.content}`).join("\n\n---\n\n")]
+      .filter(Boolean)
+      .join("\n\n===\n\n");
+    const list = catLines.map((c) => `- ${c.line}`).join("\n");
+    const lang = u?.answer_language ?? (/[\u0600-\u06FF]/.test(last) ? "ar" : "en");
 
     const system = `أنت مساعد ذكي لشركة، تعرف كل كتالوجات منتجاتها. أجب بالعربية بإجابة مباشرة ومختصرة جداً (جملة واحدة غالباً) بدون مقدمات.
 - ممنوع تماماً أي تحية أو مقدمة أو خاتمة (مثل: مرحباً، بالتأكيد، بخصوص، يسعدني، هل تحتاج شيئاً آخر).
