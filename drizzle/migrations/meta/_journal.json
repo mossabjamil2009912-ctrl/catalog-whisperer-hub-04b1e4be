@@ -29,6 +29,13 @@
       "when": 1793687572627,
       "tag": "0003_import_catalog_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793690441987,
+      "tag": "0004_migration",
+      "breakpoints": true
     }
   ]
 }
