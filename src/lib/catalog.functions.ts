@@ -164,8 +164,39 @@ export async function runAssistant(data: { messages: Msg[] }) {
       sb.from("catalogs").select("id,title,keywords"),
       ...(parts.length > 1 ? parts.slice(0, 4).map((p) => sb.rpc("search_chunks", { q: p, lim: 7 })) : []),
     ]);
+    // Always add every English/clean chunk of the top matching catalogs so no spec (e.g. MPPT) is missed.
+    const base = [...(a ?? []), ...((b as typeof a) ?? []), ...partRes.flatMap((r) => (r.data as typeof a) ?? [])];
+    const topIds: string[] = [];
+    // Direct model match: brand + power number (e.g. "Solis 20" -> catalog whose keywords contain "20K").
+    for (const p of parts.length > 1 ? parts : [last]) {
+      const brand = p.match(/Deye|Solis|Pylontech|Suntech|HiTHIUM|Li Power/i)?.[0]?.toLowerCase();
+      const nums = p.match(/\d+(?:\.\d+)?/g) ?? [];
+      for (const c of cats ?? []) {
+        const hay = `${c.title} ${c.keywords}`.toLowerCase();
+        if (brand && !hay.includes(brand)) continue;
+        if (nums.some((n) => new RegExp(`(^|[^\\d.])${n}(k|kw|ah)?\\b`, "i").test(hay)) && !topIds.includes(c.id))
+          topIds.push(c.id);
+      }
+    }
+    for (const r of [a ?? [], ...partRes.map((r) => (r.data as typeof a) ?? [])]) {
+      for (const c of r.slice(0, 2)) if (!topIds.includes(c.catalog_id)) topIds.push(c.catalog_id);
+    }
+    const titleOf = new Map((cats ?? []).map((c) => [c.id as string, c.title as string]));
+    let full: typeof base = [];
+    if (topIds.length) {
+      const { data: rows } = await sb
+        .from("catalog_chunks")
+        .select("catalog_id,page,content")
+        .in("catalog_id", topIds.slice(0, 6));
+      const garbled = (t: string) => (t.match(/[\uFB50-\uFEFF]/g)?.length ?? 0) > 20 || (t.match(/\u202B|\u202C/g)?.length ?? 0) > 20;
+      full = (rows ?? [])
+        .filter((r) => !garbled(r.content))
+        .map((r) => ({ ...r, title: titleOf.get(r.catalog_id) ?? "", score: 0 }));
+    }
     const seen = new Set<string>();
-    const chunks = [...(a ?? []), ...((b as typeof a) ?? []), ...partRes.flatMap((r) => (r.data as typeof a) ?? [])].filter((c) => {
+    const noisy = (t: string) => (t.match(/[\uFB50-\uFEFF]/g)?.length ?? 0) > 20 || (t.match(/\u202B|\u202C/g)?.length ?? 0) > 20;
+    const chunks = [...full, ...base].filter((c) => {
+      if (full.length && noisy(c.content)) return false;
       const k = `${c.catalog_id}-${c.page}-${c.content.slice(0, 40)}`;
       if (seen.has(k)) return false;
       seen.add(k);
@@ -186,6 +217,8 @@ export async function runAssistant(data: { messages: Msg[] }) {
 - لا تذكر اسم الكتالوج ولا رقم الصفحة ولا أي مصدر.
 - عند طلب مقارنة أو اختيار الأفضل: قدّم مقارنة مختصرة في نقاط قصيرة (القدرة، الجهد، عدد MPPT أو السعة، الكفاءة، أهم ميزة) لكل منتج، ثم سطر واحد بالخلاصة. بدون مقدمات.
 - بعض النصوص العربية في المقتطفات قد تكون مشوشة الحروف؛ اعتمد على الأرقام والموديلات والنسخة الإنجليزية للمنتج نفسه.
+- اقرأ جداول المواصفات (DATASHEET) كاملة بعناية: القيم مرتبة بنفس ترتيب الموديلات في سطر Models، وقيمة واحدة تعني أنها مشتركة لكل الموديلات. مثال: "MPPT number / Max. input strings number 3/6 4/8" مع "Models 29.9K 30K 40K 50K" تعني 3 MPPT لـ29.9K و30K، و4 MPPT لـ40K و50K.
+- قبل أن تقول إن معلومة غير موجودة، ابحث عنها في كل المقتطفات الخاصة بذلك المنتج؛ لا تقل "غير موجودة" إذا كانت في أي مقتطف.
 - إذا لم تجد المعلومة فقل بوضوح إنها غير موجودة في الكتالوجات المتاحة.
 
 قائمة الكتالوجات المتاحة:
