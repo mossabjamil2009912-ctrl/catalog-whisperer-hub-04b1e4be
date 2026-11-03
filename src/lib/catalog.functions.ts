@@ -361,7 +361,7 @@ export const saveCatalog = createServerFn({ method: "POST" })
       for (let i = 0; i < inserted.length; i += 40) {
         const batch = inserted.slice(i, i + 40);
         const vecs = await sem.embed(batch.map((c) => `${data.title} | page ${c.page}\n${c.content.slice(0, 6000)}`));
-        await Promise.all(batch.map((c, j) => sb.from("catalog_chunks").update({ embedding: sem.toVector(vecs[j]) }).eq("id", c.id)));
+        await Promise.all(batch.map((c, j) => sb.from("catalog_chunks").update({ embedding: sem.toVector(vecs[j]!) }).eq("id", c.id)));
       }
       const doc = `${data.title}\n${data.keywords}\n${data.description}\n${inserted.slice(0, 3).map((c) => c.content).join("\n").slice(0, 6000)}`;
       const [pv] = await sem.embed([doc]);
@@ -370,7 +370,7 @@ export const saveCatalog = createServerFn({ method: "POST" })
         summary_en: data.description,
         summary_ar: data.description,
         specs: { product_type: "", models: [], summary_en: data.description, specs: [] },
-        embedding: sem.toVector(pv),
+        embedding: sem.toVector(pv!),
       });
     } catch (e) {
       console.error("semantic index", e);
