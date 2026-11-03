@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Assistant retrieval is hybrid: AI question-understanding + pgvector embeddings (catalog_chunks.embedding, catalog_profiles) + trigram search + model-number match, fused with RRF (src/lib/rank.ts); why: users ask in any dialect/language and by function or specs. Re-run `scripts/index_catalogs.py chunks|profiles` to fill missing vectors/profiles.
