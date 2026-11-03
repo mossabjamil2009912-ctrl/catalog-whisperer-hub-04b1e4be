@@ -269,7 +269,7 @@ export function AssistantWidget() {
                   {m.role === "assistant" && i > 0 && (
                     <button
                       type="button"
-                      onClick={() => (playing === i ? stopAudio() : speak(m.content, i))}
+                      onClick={() => (playing === i ? stopAudio() : speak(speechText(m.content), i))}
                       aria-label={playing === i ? "إيقاف الصوت" : "استمع"}
                       className="mt-1 flex items-center gap-1 text-xs text-[#2b5480]"
                     >
