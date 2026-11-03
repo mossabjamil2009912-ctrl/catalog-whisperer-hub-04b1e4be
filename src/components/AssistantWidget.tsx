@@ -202,12 +202,12 @@ export function AssistantWidget() {
     try {
       const payload = { messages: next.map(({ role, content }) => ({ role, content })) };
       const base = apiBase();
-      const res: { answer: string; sources?: { id: string; title: string }[] } = base
+      const res: { answer: string; sources: { id: string; title: string }[] } = base
         ? await fetch(`${base}/api/public/assistant`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify(payload),
-          }).then((r) => r.json())
+          }).then(async (r) => { const j = (await r.json()) as { answer?: string; sources?: { id: string; title: string }[] }; return { answer: j.answer ?? "عذراً، حدث خطأ مؤقت.", sources: j.sources ?? [] }; })
         : await ask({ data: payload });
       setMsgs((m) => [...m, { role: "assistant", content: res.answer, sources: res.sources }]);
       if (voice) void speak(speechText(res.answer), next.length);
