@@ -80,7 +80,7 @@ export function AssistantWidget() {
     // Instant: phone's built-in voice first; server voice only if unavailable.
     if (speakLocal(text, idx)) return;
     try {
-      const r = await fetch("/api/public/speak", {
+      const r = await fetch(`${apiBase()}/api/public/speak`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text }),
@@ -153,7 +153,7 @@ export function AssistantWidget() {
         const rms = Math.sqrt(sum / buf.length);
         const now = Date.now();
         if (rms > 8) { spoke = true; lastLoud = now; }
-        if ((spoke && now - lastLoud > 1300) || (!spoke && now - t0 > 6000) || now - t0 > 15000) {
+        if ((spoke && now - lastLoud > 800) || (!spoke && now - t0 > 6000) || now - t0 > 15000) {
           if (mr.state === "recording") mr.stop();
         }
       }, 100);
@@ -168,7 +168,7 @@ export function AssistantWidget() {
         if (blob.size < 1000) return;
         setBusy(true);
         try {
-          const r = await fetch("/api/public/transcribe", { method: "POST", headers: { "content-type": blob.type }, body: blob });
+          const r = await fetch(`${apiBase()}/api/public/transcribe`, { method: "POST", headers: { "content-type": blob.type }, body: blob });
           const { text } = (await r.json()) as { text?: string };
           setBusy(false);
           if (text) await send(text, true);
@@ -200,9 +200,17 @@ export function AssistantWidget() {
     setInput("");
     setBusy(true);
     try {
-      const res = await ask({ data: { messages: next.map(({ role, content }) => ({ role, content })) } });
+      const payload = { messages: next.map(({ role, content }) => ({ role, content })) };
+      const base = apiBase();
+      const res: { answer: string; sources?: { id: string; title: string }[] } = base
+        ? await fetch(`${base}/api/public/assistant`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          }).then((r) => r.json())
+        : await ask({ data: payload });
       setMsgs((m) => [...m, { role: "assistant", content: res.answer, sources: res.sources }]);
-      if (voice) void speak(res.answer, next.length);
+      if (voice) void speak(speechText(res.answer), next.length);
     } catch {
       setMsgs((m) => [...m, { role: "assistant", content: "عذراً، حدث خطأ. حاول مرة أخرى." }]);
     } finally {
