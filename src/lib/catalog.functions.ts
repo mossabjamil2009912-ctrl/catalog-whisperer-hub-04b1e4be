@@ -350,8 +350,30 @@ export const saveCatalog = createServerFn({ method: "POST" })
         rows.push({ catalog_id: row.id, page: p.page, content: text.slice(Math.max(0, i - 150), i + 1200) });
       }
     }
+    const inserted: { id: string; page: number; content: string }[] = [];
     for (let i = 0; i < rows.length; i += 500) {
-      await sb.from("catalog_chunks").insert(rows.slice(i, i + 500));
+      const { data: ins } = await sb.from("catalog_chunks").insert(rows.slice(i, i + 500)).select("id,page,content");
+      inserted.push(...(ins ?? []));
+    }
+    // Meaning-based index for the new catalog (best effort; search still works without it).
+    try {
+      const sem = await import("@/lib/semantic.server");
+      for (let i = 0; i < inserted.length; i += 40) {
+        const batch = inserted.slice(i, i + 40);
+        const vecs = await sem.embed(batch.map((c) => `${data.title} | page ${c.page}\n${c.content.slice(0, 6000)}`));
+        await Promise.all(batch.map((c, j) => sb.from("catalog_chunks").update({ embedding: sem.toVector(vecs[j]) }).eq("id", c.id)));
+      }
+      const doc = `${data.title}\n${data.keywords}\n${data.description}\n${inserted.slice(0, 3).map((c) => c.content).join("\n").slice(0, 6000)}`;
+      const [pv] = await sem.embed([doc]);
+      await sb.from("catalog_profiles").insert({
+        catalog_id: row.id,
+        summary_en: data.description,
+        summary_ar: data.description,
+        specs: { product_type: "", models: [], summary_en: data.description, specs: [] },
+        embedding: sem.toVector(pv),
+      });
+    } catch (e) {
+      console.error("semantic index", e);
     }
     return { id: row.id, chunks: rows.length };
   });
