@@ -22,6 +22,13 @@
       "when": 1793651580843,
       "tag": "0002_public_read_catalog_files",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793687572627,
+      "tag": "0003_import_catalog_schema",
+      "breakpoints": true
     }
   ]
 }

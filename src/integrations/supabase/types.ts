@@ -14,13 +14,122 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      catalog_chunks: {
+        Row: {
+          catalog_id: string
+          content: string
+          id: string
+          page: number
+        }
+        Insert: {
+          catalog_id: string
+          content: string
+          id?: string
+          page: number
+        }
+        Update: {
+          catalog_id?: string
+          content?: string
+          id?: string
+          page?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_chunks_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalogs: {
+        Row: {
+          category_id: string | null
+          cover_path: string | null
+          created_at: string
+          description: string
+          file_path: string
+          id: string
+          keywords: string
+          language: string
+          page_count: number
+          title: string
+        }
+        Insert: {
+          category_id?: string | null
+          cover_path?: string | null
+          created_at?: string
+          description?: string
+          file_path: string
+          id?: string
+          keywords?: string
+          language?: string
+          page_count?: number
+          title: string
+        }
+        Update: {
+          category_id?: string | null
+          cover_path?: string | null
+          created_at?: string
+          description?: string
+          file_path?: string
+          id?: string
+          keywords?: string
+          language?: string
+          page_count?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalogs_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      categories: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      search_catalogs: {
+        Args: { q: string }
+        Returns: {
+          id: string
+          score: number
+        }[]
+      }
+      search_chunks: {
+        Args: { lim?: number; q: string }
+        Returns: {
+          catalog_id: string
+          content: string
+          page: number
+          score: number
+          title: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
