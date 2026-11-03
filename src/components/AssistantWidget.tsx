@@ -7,6 +7,33 @@ const logo = { url: "/actes-logo.png" };
 
 type Msg = { role: "user" | "assistant"; content: string; sources?: { id: string; title: string }[] };
 
+// On copies hosted elsewhere (e.g. Vercel), call the main app directly from the browser (skips a slow extra hop).
+const MAIN = "https://catalog-whisperer-hub.lovable.app";
+function apiBase() {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hostname;
+  return h.endsWith("lovable.app") || h === "localhost" || h.endsWith("lovableproject.com") ? "" : MAIN;
+}
+
+// Short spoken version: first 1–2 sentences without tables/markdown, so audio starts fast.
+function speechText(t: string) {
+  const clean = t
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("|"))
+    .join(" ")
+    .replace(/[*#_`>|-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parts = clean.match(/[^.!؟?\n]+[.!؟?]?/g) ?? [clean];
+  let out = "";
+  for (const p of parts) {
+    if ((out + p).length > 220 && out) break;
+    out += p;
+  }
+  return out.trim().slice(0, 260);
+}
+
+
 
 export function AssistantWidget() {
   const ask = useServerFn(askAssistant);
