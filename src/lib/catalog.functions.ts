@@ -271,6 +271,7 @@ ${context || "(لا توجد مقتطفات مطابقة)"}`;
     try {
       const res = await generateChatCompletion({
         model: "openai/gpt-6-astra",
+        reasoning_effort: "low",
         messages: [{ role: "system", content: system }, ...data.messages],
       });
       const text = res.choices?.[0]?.message?.content;
