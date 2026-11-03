@@ -167,6 +167,17 @@ export async function runAssistant(data: { messages: Msg[] }) {
     // Always add every English/clean chunk of the top matching catalogs so no spec (e.g. MPPT) is missed.
     const base = [...(a ?? []), ...((b as typeof a) ?? []), ...partRes.flatMap((r) => (r.data as typeof a) ?? [])];
     const topIds: string[] = [];
+    // Direct model match: brand + power number (e.g. "Solis 20" -> catalog whose keywords contain "20K").
+    for (const p of parts.length > 1 ? parts : [last]) {
+      const brand = p.match(/Deye|Solis|Pylontech|Suntech|HiTHIUM|Li Power/i)?.[0]?.toLowerCase();
+      const nums = p.match(/\d+(?:\.\d+)?/g) ?? [];
+      for (const c of cats ?? []) {
+        const hay = `${c.title} ${c.keywords}`.toLowerCase();
+        if (brand && !hay.includes(brand)) continue;
+        if (nums.some((n) => new RegExp(`(^|[^\\d.])${n}(k|kw|ah)?\\b`, "i").test(hay)) && !topIds.includes(c.id))
+          topIds.push(c.id);
+      }
+    }
     for (const r of [a ?? [], ...partRes.map((r) => (r.data as typeof a) ?? [])]) {
       for (const c of r.slice(0, 2)) if (!topIds.includes(c.catalog_id)) topIds.push(c.catalog_id);
     }
