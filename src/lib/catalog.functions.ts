@@ -201,6 +201,7 @@ export async function runAssistant(data: { messages: Msg[] }) {
       return true;
     });
 
+    if (process.env.DEBUG_CTX) console.log("CTX", topIds, chunks.map((c) => c.title.slice(0, 30) + " p" + c.page + " " + c.content.slice(0, 30)));
     const context = chunks
       .map((c) => `[كتالوج: ${c.title} | id: ${c.catalog_id} | صفحة ${c.page}]\n${c.content}`)
       .join("\n\n---\n\n");
