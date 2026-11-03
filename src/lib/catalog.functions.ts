@@ -37,7 +37,7 @@ export const listCatalogs = createServerFn({ method: "GET" }).handler(async () =
     sb.from("catalogs").select("*").order("created_at", { ascending: false }),
   ]);
   const list = rows ?? [];
-  const covers = list.map((r) => r.cover_path).filter((p): p is string => !!p);
+  const covers = list.map((r) => r.cover_path).filter((p): p is string => !!p && !p.startsWith("/"));
   const urlMap = new Map<string, string>();
   if (covers.length) {
     const { data } = await sb.storage.from(BUCKET).createSignedUrls(covers, 60 * 60 * 24);
@@ -52,7 +52,7 @@ export const listCatalogs = createServerFn({ method: "GET" }).handler(async () =
     language: r.language,
     page_count: r.page_count,
     created_at: r.created_at,
-    cover_url: r.cover_path ? (urlMap.get(r.cover_path) ?? null) : null,
+    cover_url: r.cover_path ? (r.cover_path.startsWith("/") ? r.cover_path : (urlMap.get(r.cover_path) ?? null)) : null,
   }));
   return { categories: cats ?? [], catalogs };
 });
@@ -72,6 +72,13 @@ export const getCatalog = createServerFn({ method: "GET" })
     const sb = await admin();
     const { data: row } = await sb.from("catalogs").select("*, categories(name)").eq("id", data.id).maybeSingle();
     if (!row) return null;
+    if (row.file_path.startsWith("/")) {
+      return {
+        id: row.id, title: row.title, description: row.description, language: row.language,
+        category: (row.categories as { name: string } | null)?.name ?? null,
+        page_count: row.page_count, file_url: row.file_path, download_url: row.file_path,
+      };
+    }
     const { data: file } = await sb.storage.from(BUCKET).createSignedUrl(row.file_path, 60 * 60 * 6);
     const { data: dl } = await sb.storage
       .from(BUCKET)
