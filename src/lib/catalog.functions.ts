@@ -158,29 +158,56 @@ export async function runAssistant(data: { messages: Msg[] }) {
       .filter((s) => s.length >= 2);
     const isCompare = parts.length > 1 || /قارن|مقارن|الفرق|افضل|أفضل|vs|compare/i.test(last);
 
-    const [{ data: a }, { data: b }, { data: cats }, ...partRes] = await Promise.all([
+    const sem = await import("@/lib/semantic.server");
+    const { fuseRanks } = await import("@/lib/rank");
+    type Hit = { catalog_id: string; title: string; page: number; content: string; score: number };
+    const [{ data: cats }, { data: profs }] = await Promise.all([
+      sb.from("catalogs").select("id,title,keywords"),
+      sb.from("catalog_profiles").select("catalog_id,specs"),
+    ]);
+    type Prof = { product_type?: string; models?: string[]; summary_en?: string; specs?: { model: string; key_specs: string }[] };
+    const profOf = new Map((profs ?? []).map((p) => [p.catalog_id as string, p.specs as Prof]));
+    const catLines = (cats ?? []).map((c) => {
+      const p = profOf.get(c.id);
+      return { id: c.id, line: `${c.title} | ${c.keywords} | ${p?.product_type ?? ""} | ${(p?.models ?? []).join(", ").slice(0, 200)}` };
+    });
+
+    // 1) Understand the question (meaning, dialect, follow-ups) + embed it, alongside keyword searches.
+    const embedText = [prev, last].filter(Boolean).join("\n");
+    const [u, qEmb, { data: a }, { data: b }, ...partRes] = await Promise.all([
+      sem.understandQuestion(data.messages, catLines),
+      sem.embed([embedText]).then((v) => v[0]).catch((e) => (console.error("embed", e), null)),
       sb.rpc("search_chunks", { q: last, lim: isCompare ? 6 : 7 }),
       prev ? sb.rpc("search_chunks", { q: `${prev} ${last}`, lim: 4 }) : Promise.resolve({ data: [] }),
-      sb.from("catalogs").select("id,title,keywords"),
       ...(parts.length > 1 ? parts.slice(0, 4).map((p) => sb.rpc("search_chunks", { q: p, lim: 7 })) : []),
     ]);
-    // Always add every English/clean chunk of the top matching catalogs so no spec (e.g. MPPT) is missed.
-    const base = [...(a ?? []), ...((b as typeof a) ?? []), ...partRes.flatMap((r) => (r.data as typeof a) ?? [])];
-    const topIds: string[] = [];
+    // 2) Semantic + cross-language searches.
+    const vec = qEmb ? sem.toVector(qEmb) : null;
+    const [semChunks, semProfs, enRes] = await Promise.all([
+      vec ? sb.rpc("match_chunks", { query_embedding: vec, lim: 12 }).then((r) => (r.data ?? []) as Hit[]) : Promise.resolve([] as Hit[]),
+      vec ? sb.rpc("match_profiles", { query_embedding: vec, lim: 6 }).then((r) => (r.data ?? []) as { catalog_id: string; score: number }[]) : Promise.resolve([]),
+      u?.search_query_en ? sb.rpc("search_chunks", { q: u.search_query_en, lim: 6 }).then((r) => (r.data ?? []) as Hit[]) : Promise.resolve([] as Hit[]),
+    ]);
+
+    const base: Hit[] = [...semChunks, ...((a as Hit[]) ?? []), ...((b as Hit[]) ?? []), ...enRes, ...partRes.flatMap((r) => (r.data as Hit[]) ?? [])];
     // Direct model match: brand + power number (e.g. "Solis 20" -> catalog whose keywords contain "20K").
-    for (const p of parts.length > 1 ? parts : [last]) {
-      const brand = p.match(/Deye|Solis|Pylontech|Suntech|HiTHIUM|Li Power/i)?.[0]?.toLowerCase();
+    const modelIds: string[] = [];
+    for (const p of [...(parts.length > 1 ? parts : [last]), u?.search_query_en ?? ""]) {
+      const brand = p.match(/Deye|Solis|Pylontech|Suntech|HiTHIUM|Li Power|FIDUS/i)?.[0]?.toLowerCase();
       const nums = p.match(/\d+(?:\.\d+)?/g) ?? [];
-      for (const c of cats ?? []) {
-        const hay = `${c.title} ${c.keywords}`.toLowerCase();
+      for (const c of catLines) {
+        const hay = c.line.toLowerCase();
         if (brand && !hay.includes(brand)) continue;
-        if (nums.some((n) => new RegExp(`(^|[^\\d.])${n}(k|kw|ah)?\\b`, "i").test(hay)) && !topIds.includes(c.id))
-          topIds.push(c.id);
+        if (nums.some((n) => new RegExp(`(^|[^\\d.])${n}(k|kw|kwh|ah|w)?\\b`, "i").test(hay)) && !modelIds.includes(c.id))
+          modelIds.push(c.id);
       }
     }
-    for (const r of [a ?? [], ...partRes.map((r) => (r.data as typeof a) ?? [])]) {
-      for (const c of r.slice(0, 2)) if (!topIds.includes(c.catalog_id)) topIds.push(c.catalog_id);
-    }
+    const ids = (r: { catalog_id: string }[] | null | undefined) => (r ?? []).map((x) => x.catalog_id);
+    const topIds = fuseRanks(
+      [u?.catalog_ids ?? [], modelIds.slice(0, 6), ids(semProfs), ids(semChunks), ids(a as Hit[]), ids(enRes)],
+      60,
+      [3, 1.5, 1.5, 1, 0.7, 0.7],
+    ).slice(0, u?.catalog_ids.length ? Math.max(4, u.catalog_ids.length) : 5);
     const titleOf = new Map((cats ?? []).map((c) => [c.id as string, c.title as string]));
     let full: typeof base = [];
     if (topIds.length) {
@@ -196,30 +223,43 @@ export async function runAssistant(data: { messages: Msg[] }) {
     const seen = new Set<string>();
     const noisy = (t: string) => (t.match(/[\uFB50-\uFEFF]/g)?.length ?? 0) > 20 || (t.match(/\u202B|\u202C/g)?.length ?? 0) > 20;
     const chunks = [...full, ...base].filter((c) => {
-      if (full.length && noisy(c.content)) return false;
+      if (noisy(c.content)) return false;
       const k = `${c.catalog_id}-${c.page}-${c.content.slice(0, 40)}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
-    });
+    }).slice(0, 60);
 
-    const context = chunks
-      .map((c) => `[كتالوج: ${c.title} | id: ${c.catalog_id} | صفحة ${c.page}]\n${c.content}`)
-      .join("\n\n---\n\n");
-    const list = (cats ?? []).map((c) => `- ${c.title}${c.keywords ? ` (${c.keywords})` : ""}`).join("\n");
+    const profileText = topIds
+      .map((id) => {
+        const p = profOf.get(id);
+        if (!p) return "";
+        return `[ملف المنتج: ${titleOf.get(id)}]\nType: ${p.product_type}\n${p.summary_en}\n${(p.specs ?? []).map((s) => `${s.model}: ${s.key_specs}`).join("\n")}`;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    const context = [profileText, chunks.map((c) => `[كتالوج: ${c.title} | id: ${c.catalog_id} | صفحة ${c.page}]\n${c.content}`).join("\n\n---\n\n")]
+      .filter(Boolean)
+      .join("\n\n===\n\n");
+    const list = catLines.map((c) => `- ${c.line}`).join("\n");
+    const lang = u?.answer_language ?? (/[\u0600-\u06FF]/.test(last) ? "ar" : "en");
 
-    const system = `أنت مساعد ذكي لشركة، تعرف كل كتالوجات منتجاتها. أجب بالعربية بإجابة مباشرة ومختصرة جداً (جملة واحدة غالباً) بدون مقدمات.
+    const system = `أنت خبير منتجات لشركة طاقة شمسية، تعرف كل كتالوجات منتجاتها. ${lang === "en" ? "Answer in ENGLISH (the user wrote in English)." : "أجب بالعربية."} إجابة مباشرة ومختصرة جداً (جملة واحدة غالباً) بدون مقدمات.
 - ممنوع تماماً أي تحية أو مقدمة أو خاتمة (مثل: مرحباً، بالتأكيد، بخصوص، يسعدني، هل تحتاج شيئاً آخر).
 - ابدأ الإجابة بالمعلومة نفسها مباشرة، ولا تعِد صياغة السؤال. مثال: سؤال "ما سعة بطارية RV12100CH؟" ← الجواب "100Ah، 1280Wh، 12.8V." وليس "سعة بطارية RV12100CH هي...".
-- اعتمد فقط على المقتطفات المرفقة من الكتالوجات. لا تخترع أرقاماً أو مواصفات.
+- اعتمد فقط على ملفات المنتجات والمقتطفات المرفقة. لا تخترع منتجات أو موديلات أو أرقاماً أو توافقاً فنياً.
+- افهم المعنى لا الكلمات: المستخدم قد يكتب بلهجة عامية أو بأخطاء إملائية أو بلغة مختلفة عن الكتالوج، أو يصف وظيفة المنتج (مثل "جهاز يحول كهرباء الألواح لكهرباء البيت" = انفرتر)، أو يطلب مواصفة (مثل "بطارية 10 كيلو" = بطارية جهدها × سعتها ≈ 10kWh، احسبها: 51.2V × 200Ah = 10.24kWh).
+- فرّق بين الطاقة الاسمية والقابلة للاستخدام إن توفرتا.
+- إذا كان التطابق جزئياً أو تقريبياً فقل ذلك صراحة، وإذا احتمل الطلب أكثر من منتج فاذكرها باختصار مع الفرق الأساسي. إذا كان الطلب غامضاً جداً فاسأل سؤالاً توضيحياً واحداً.
+- لأسئلة المتابعة (مثل "كم أبعادها؟") اعتمد على المنتج المذكور سابقاً في المحادثة ولا تخلطه بغيره.
+- احتفظ بأسماء الموديلات والعلامات التجارية كما هي دون ترجمة.
 - لا تستخدم كلمة "بطاقة" أبداً للتعبير عن الطاقة أو السعة؛ استخدم كلمة "بقدرة" بدلاً منها (مثال: "بقدرة 1280 واط ساعة").
-- افهم الأسماء المكتوبة بشكل تقريبي (مثل "سوليز 50" = "Solis 50kW").
 - لا تذكر اسم الكتالوج ولا رقم الصفحة ولا أي مصدر.
 - عند طلب مقارنة أو اختيار الأفضل: قدّم مقارنة مختصرة في نقاط قصيرة (القدرة، الجهد، عدد MPPT أو السعة، الكفاءة، أهم ميزة) لكل منتج، ثم سطر واحد بالخلاصة. بدون مقدمات.
-- بعض النصوص العربية في المقتطفات قد تكون مشوشة الحروف؛ اعتمد على الأرقام والموديلات والنسخة الإنجليزية للمنتج نفسه.
+- بعض النصوص العربية في المقتطفات قد تكون مشوشة الحروف؛ اعتمد على ملف المنتج والأرقام والنسخة الإنجليزية.
 - اقرأ جداول المواصفات (DATASHEET) كاملة بعناية: القيم مرتبة بنفس ترتيب الموديلات في سطر Models، وقيمة واحدة تعني أنها مشتركة لكل الموديلات. مثال: "MPPT number / Max. input strings number 3/6 4/8" مع "Models 29.9K 30K 40K 50K" تعني 3 MPPT لـ29.9K و30K، و4 MPPT لـ40K و50K.
-- قبل أن تقول إن معلومة غير موجودة، ابحث عنها في كل المقتطفات الخاصة بذلك المنتج؛ لا تقل "غير موجودة" إذا كانت في أي مقتطف.
-- إذا لم تجد المعلومة فقل بوضوح إنها غير موجودة في الكتالوجات المتاحة.
+- قبل أن تقول إن معلومة أو منتجاً غير موجود، راجع كل ملفات المنتجات والمقتطفات وقائمة الكتالوجات؛ وإذا وُجد منتج قريب فاذكره بدل النفي.
+- إذا لم تجد المعلومة فعلاً فقل بوضوح إنها غير موجودة في الكتالوجات المتاحة.
 
 قائمة الكتالوجات المتاحة:
 ${list || "(لا توجد كتالوجات بعد)"}
@@ -310,8 +350,30 @@ export const saveCatalog = createServerFn({ method: "POST" })
         rows.push({ catalog_id: row.id, page: p.page, content: text.slice(Math.max(0, i - 150), i + 1200) });
       }
     }
+    const inserted: { id: string; page: number; content: string }[] = [];
     for (let i = 0; i < rows.length; i += 500) {
-      await sb.from("catalog_chunks").insert(rows.slice(i, i + 500));
+      const { data: ins } = await sb.from("catalog_chunks").insert(rows.slice(i, i + 500)).select("id,page,content");
+      inserted.push(...(ins ?? []));
+    }
+    // Meaning-based index for the new catalog (best effort; search still works without it).
+    try {
+      const sem = await import("@/lib/semantic.server");
+      for (let i = 0; i < inserted.length; i += 40) {
+        const batch = inserted.slice(i, i + 40);
+        const vecs = await sem.embed(batch.map((c) => `${data.title} | page ${c.page}\n${c.content.slice(0, 6000)}`));
+        await Promise.all(batch.map((c, j) => sb.from("catalog_chunks").update({ embedding: sem.toVector(vecs[j]!) }).eq("id", c.id)));
+      }
+      const doc = `${data.title}\n${data.keywords}\n${data.description}\n${inserted.slice(0, 3).map((c) => c.content).join("\n").slice(0, 6000)}`;
+      const [pv] = await sem.embed([doc]);
+      await sb.from("catalog_profiles").insert({
+        catalog_id: row.id,
+        summary_en: data.description,
+        summary_ar: data.description,
+        specs: { product_type: "", models: [], summary_en: data.description, specs: [] },
+        embedding: sem.toVector(pv!),
+      });
+    } catch (e) {
+      console.error("semantic index", e);
     }
     return { id: row.id, chunks: rows.length };
   });
