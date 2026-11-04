@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Send, X, Loader2, Mic, Square, Volume2 } from "lucide-react";
+import { ArrowUp, X, Loader2, Mic, Square, Volume2 } from "lucide-react";
 import { askAssistant } from "@/lib/catalog.functions";
 import { speakable } from "@/lib/speakable";
 const logo = { url: "/actes-logo.png" };
