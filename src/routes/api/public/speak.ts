@@ -5,7 +5,6 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "content-type",
 };
-const REMOTE = "https://catalog-whisperer-hub.lovable.app/api/public/speak";
 
 // Public: reads an assistant reply aloud (Arabic voice).
 export const Route = createFileRoute("/api/public/speak")({
@@ -20,10 +19,6 @@ export const Route = createFileRoute("/api/public/speak")({
           /* ignore */
         }
         if (!text) return Response.json({ error: "empty" }, { status: 400, headers: cors });
-        if (!process.env["LOVABLE_API_KEY"]) {
-          const r = await fetch(REMOTE, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
-          return new Response(r.body, { status: r.status, headers: { ...cors, "content-type": r.headers.get("content-type") || "audio/wav" } });
-        }
         try {
           const { generateSpeech } = await import("@lovable.dev/ai-gateway");
           const audio = await generateSpeech({
