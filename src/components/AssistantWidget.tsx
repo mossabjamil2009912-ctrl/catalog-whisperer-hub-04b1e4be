@@ -3,11 +3,12 @@ import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Send, X, Loader2, Mic, Square, Volume2 } from "lucide-react";
 import { askAssistant } from "@/lib/catalog.functions";
+import { speakable } from "@/lib/speakable";
 const logo = { url: "/actes-logo.png" };
 
 type Msg = { role: "user" | "assistant"; content: string; sources?: { id: string; title: string }[] };
 
-import { speakable } from "@/lib/speakable";
+
 
 // Short spoken version: first 1–2 sentences without tables/markdown, so audio starts fast.
 function speechText(t: string) {
