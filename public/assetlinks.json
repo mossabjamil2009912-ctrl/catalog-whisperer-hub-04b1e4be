@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.lovable.catalog_whisperer_hub.twa",
+        "sha256_cert_fingerprints": ["46:20:56:FC:A6:A1:18:BE:5B:3B:F3:3E:5A:64:9B:6B:D6:FF:9A:13:D7:80:E7:3F:01:31:C0:6F:E5:AC:2F:04"]
+      }
+    }]
