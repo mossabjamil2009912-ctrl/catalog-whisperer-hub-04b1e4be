@@ -42,6 +42,8 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "ابحث في جميع كتالوجات منتجاتنا واسأل المساعد الذكي عن أي مواصفة." },
       { property: "og:title", content: "مكتبة الكتالوجات" },
       { property: "og:description", content: "ابحث في جميع كتالوجات منتجاتنا واسأل المساعد الذكي." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(catalogsQuery),

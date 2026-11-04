@@ -16,6 +16,8 @@ export const Route = createFileRoute("/catalog/$id")({
       { name: "description", content: loaderData?.description || "عرض وتحميل الكتالوج" },
       { property: "og:title", content: loaderData?.title ?? "كتالوج" },
       { property: "og:description", content: loaderData?.description || "عرض وتحميل الكتالوج" },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   notFoundComponent: () => (

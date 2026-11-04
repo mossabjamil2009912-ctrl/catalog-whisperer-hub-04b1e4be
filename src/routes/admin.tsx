@@ -23,6 +23,8 @@ export const Route = createFileRoute("/admin")({
       { name: "robots", content: "noindex" },
       { property: "og:title", content: "لوحة الإدارة" },
       { property: "og:description", content: "إدارة الكتالوجات والأقسام." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: AdminPage,
