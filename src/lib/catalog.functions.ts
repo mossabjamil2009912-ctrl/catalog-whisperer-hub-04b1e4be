@@ -116,6 +116,49 @@ export const askAssistant = createServerFn({ method: "POST" })
   });
 
 export async function runAssistant(data: { messages: Msg[] }) {
+  const r = await prepareAssistant(data);
+  const { generateChatCompletion } = await import("@lovable.dev/ai-gateway");
+  try {
+    const res = await generateChatCompletion({
+      model: "google/gemini-3-flash-preview",
+      reasoning_effort: "low",
+      messages: r.messages,
+    });
+    const text = res.choices?.[0]?.message?.content;
+    return { answer: typeof text === "string" ? text : "عذراً، لم أتمكن من الإجابة.", sources: [] as { id: string; title: string }[] };
+  } catch (e) {
+    console.error(e);
+    return { answer: "عذراً، حدث خطأ مؤقت. حاول مرة أخرى.", sources: [] };
+  }
+}
+
+/** Streams the answer as plain text chunks so the first words appear immediately. */
+export async function streamAssistant(data: { messages: Msg[] }): Promise<ReadableStream<Uint8Array>> {
+  const r = await prepareAssistant(data);
+  const { streamChatCompletion } = await import("@lovable.dev/ai-gateway");
+  const enc = new TextEncoder();
+  return new ReadableStream({
+    async start(ctrl) {
+      try {
+        const s = await streamChatCompletion({
+          model: "google/gemini-3-flash-preview",
+          reasoning_effort: "minimal",
+          messages: r.messages,
+        });
+        for await (const ev of s as AsyncIterable<{ choices?: { delta?: { content?: string } }[] }>) {
+          const t = ev?.choices?.[0]?.delta?.content;
+          if (t) ctrl.enqueue(enc.encode(t));
+        }
+      } catch (e) {
+        console.error(e);
+        ctrl.enqueue(enc.encode("عذراً، حدث خطأ مؤقت. حاول مرة أخرى."));
+      }
+      ctrl.close();
+    },
+  });
+}
+
+async function prepareAssistant(data: { messages: Msg[] }) {
   {
     const sb = await admin();
     const userMsgs = data.messages.filter((m) => m.role === "user");
@@ -159,7 +202,8 @@ export async function runAssistant(data: { messages: Msg[] }) {
     // 1) Understand the question (meaning, dialect, follow-ups) + embed it, alongside keyword searches.
     const embedText = [prev, last].filter(Boolean).join("\n");
     const [u, qEmb, { data: a }, { data: b }, ...partRes] = await Promise.all([
-      sem.understandQuestion(data.messages, catLines),
+      // Cap the understanding step so it never holds up the answer.
+      Promise.race([sem.understandQuestion(data.messages, catLines), new Promise<null>((r) => setTimeout(() => r(null), 2500))]),
       sem.embed([embedText]).then((v) => v[0]).catch((e) => (console.error("embed", e), null)),
       sb.rpc("search_chunks", { q: last, lim: isCompare ? 6 : 7 }),
       prev ? sb.rpc("search_chunks", { q: `${prev} ${last}`, lim: 4 }) : Promise.resolve({ data: [] }),
@@ -251,22 +295,7 @@ ${list || "(لا توجد كتالوجات بعد)"}
 مقتطفات ذات صلة:
 ${context || "(لا توجد مقتطفات مطابقة)"}`;
 
-    const { generateChatCompletion } = await import("@lovable.dev/ai-gateway");
-    try {
-      const res = await generateChatCompletion({
-        model: "google/gemini-3-flash-preview",
-        reasoning_effort: "low",
-        messages: [{ role: "system", content: system }, ...data.messages],
-      });
-      const text = res.choices?.[0]?.message?.content;
-      const sources = Array.from(
-        new Map(chunks.slice(0, 4).map((c) => [c.catalog_id, { id: c.catalog_id, title: c.title }])).values(),
-      );
-      return { answer: typeof text === "string" ? text : "عذراً، لم أتمكن من الإجابة.", sources: [] as typeof sources };
-    } catch (e) {
-      console.error(e);
-      return { answer: "عذراً، حدث خطأ مؤقت. حاول مرة أخرى.", sources: [] };
-    }
+    return { messages: [{ role: "system" as const, content: system }, ...data.messages] };
   }
 }
 
