@@ -99,7 +99,6 @@ export const getCatalog = createServerFn({ method: "GET" })
 
 type Msg = { role: "user" | "assistant"; content: string };
 
-const REMOTE_ASSISTANT = "https://catalog-whisperer-hub.lovable.app/api/public/assistant";
 
 export function cleanMsgs(d: { messages?: Msg[] }) {
   return {
@@ -113,21 +112,6 @@ export function cleanMsgs(d: { messages?: Msg[] }) {
 export const askAssistant = createServerFn({ method: "POST" })
   .inputValidator((d: { messages: Msg[] }) => cleanMsgs(d))
   .handler(async ({ data }) => {
-    if (!process.env["LOVABLE_API_KEY"]) {
-      // Hosted elsewhere (e.g. Vercel): forward the question to the main app.
-      try {
-        const r = await fetch(REMOTE_ASSISTANT, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(data),
-        });
-        const j = (await r.json()) as { answer?: string };
-        return { answer: j.answer ?? "عذراً، حدث خطأ مؤقت. حاول مرة أخرى.", sources: [] as { id: string; title: string }[] };
-      } catch (e) {
-        console.error(e);
-        return { answer: "عذراً، حدث خطأ مؤقت. حاول مرة أخرى.", sources: [] as { id: string; title: string }[] };
-      }
-    }
     return runAssistant(data);
   });
 
