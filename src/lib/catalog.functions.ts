@@ -98,6 +98,7 @@ export const getCatalog = createServerFn({ method: "GET" })
 /* ---------- Assistant ---------- */
 
 type Msg = { role: "user" | "assistant"; content: string };
+let catCache: { at: number; cats: { id: string; title: string; keywords: string | null }[]; profs: { catalog_id: string; specs: unknown }[] } | null = null;
 
 
 export function cleanMsgs(d: { messages?: Msg[] }) {
@@ -172,6 +173,7 @@ async function prepareAssistant(data: { messages: Msg[] }) {
         .replace(/سانتك|صنتك/g, " Suntech ")
         .replace(/هايث[يى]وم|ه[يى]ث[يى]وم/g, " HiTHIUM ")
         .replace(/ل[يى] ?باور/g, " Li Power ")
+        .replace(/ف[يى]د[وو]س/g, " FIDUS ")
         .replace(/([A-Za-z]) +(\d)/g, "$1 $2")
         .replace(/\s+/g, " ")
         .trim();
@@ -188,10 +190,15 @@ async function prepareAssistant(data: { messages: Msg[] }) {
     const sem = await import("@/lib/semantic.server");
     const { fuseRanks } = await import("@/lib/rank");
     type Hit = { catalog_id: string; title: string; page: number; content: string; score: number };
-    const [{ data: cats }, { data: profs }] = await Promise.all([
-      sb.from("catalogs").select("id,title,keywords"),
-      sb.from("catalog_profiles").select("catalog_id,specs"),
-    ]);
+    // Catalog list + profiles are cached in memory so each question skips this round trip.
+    if (!catCache || Date.now() - catCache.at > 5 * 60_000) {
+      const [c, p] = await Promise.all([
+        sb.from("catalogs").select("id,title,keywords"),
+        sb.from("catalog_profiles").select("catalog_id,specs"),
+      ]);
+      catCache = { at: Date.now(), cats: c.data ?? [], profs: p.data ?? [] };
+    }
+    const { cats, profs } = catCache;
     type Prof = { product_type?: string; models?: string[]; summary_en?: string; specs?: { model: string; key_specs: string }[] };
     const profOf = new Map((profs ?? []).map((p) => [p.catalog_id as string, p.specs as Prof]));
     const catLines = (cats ?? []).map((c) => {
@@ -201,10 +208,24 @@ async function prepareAssistant(data: { messages: Msg[] }) {
 
     // 1) Understand the question (meaning, dialect, follow-ups) + embed it, alongside keyword searches.
     const embedText = [prev, last].filter(Boolean).join("\n");
+    // Fast path: a clear brand + model number (e.g. "سوليس 50", "فيدوس 16") is matched instantly
+    // in memory, so the slow AI-understanding and embedding steps are skipped.
+    const fastIds: string[] = [];
+    for (const p of parts.length > 1 ? parts : [last]) {
+      const brand = p.match(/Deye|Solis|Pylontech|Suntech|HiTHIUM|Li Power|FIDUS/i)?.[0]?.toLowerCase();
+      const nums = p.match(/\d+(?:\.\d+)?/g) ?? [];
+      if (!brand || !nums.length) continue;
+      for (const c of catLines) {
+        const hay = c.line.toLowerCase();
+        if (hay.includes(brand) && nums.some((n) => new RegExp(`(^|[^\\d.])${n}(k|kw|kwh|ah|w)?\\b`, "i").test(hay)) && !fastIds.includes(c.id))
+          fastIds.push(c.id);
+      }
+    }
+    const fast = fastIds.length > 0 && fastIds.length <= 4 * Math.max(1, parts.length);
     const [u, qEmb, { data: a }, { data: b }, ...partRes] = await Promise.all([
       // Cap the understanding step so it never holds up the answer.
-      Promise.race([sem.understandQuestion(data.messages, catLines), new Promise<null>((r) => setTimeout(() => r(null), 2500))]),
-      sem.embed([embedText]).then((v) => v[0]).catch((e) => (console.error("embed", e), null)),
+      fast ? Promise.resolve(null) : Promise.race([sem.understandQuestion(data.messages, catLines), new Promise<null>((r) => setTimeout(() => r(null), 1500))]),
+      fast ? Promise.resolve(null) : sem.embed([embedText]).then((v) => v[0]).catch((e) => (console.error("embed", e), null)),
       sb.rpc("search_chunks", { q: last, lim: isCompare ? 6 : 7 }),
       prev ? sb.rpc("search_chunks", { q: `${prev} ${last}`, lim: 4 }) : Promise.resolve({ data: [] }),
       ...(parts.length > 1 ? parts.slice(0, 4).map((p) => sb.rpc("search_chunks", { q: p, lim: 7 })) : []),
