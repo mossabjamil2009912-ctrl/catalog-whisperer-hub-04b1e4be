@@ -304,7 +304,7 @@ export function AssistantWidget() {
               onClick={toggleRec}
               disabled={busy && !rec}
               aria-label={rec ? "إيقاف التسجيل وإرسال" : "تحدث بالصوت"}
-              className={`rounded-xl px-3 text-white disabled:opacity-50 ${rec ? "animate-pulse bg-red-600" : "bg-[#2b5480]"}`}
+              className={`shrink-0 rounded-xl px-3 text-white disabled:opacity-50 ${rec ? "animate-pulse bg-red-600" : "bg-[#2b5480]"}`}
             >
               {rec ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
             </button>
@@ -312,14 +312,14 @@ export function AssistantWidget() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={rec ? "جاري التسجيل... اضغط للإرسال" : "اكتب سؤالك أو اضغط المايك..."}
-              className="flex-1 rounded-xl border-2 border-[#c7cbd3] bg-white px-3 py-2 text-base text-[#1f1f22] outline-none placeholder:text-[#9ca3af] focus:border-emerald-500"
+              className="min-w-0 flex-1 rounded-xl border-2 border-[#c7cbd3] bg-white px-3 py-2 text-base text-[#1f1f22] outline-none placeholder:text-[#9ca3af] focus:border-emerald-500"
             />
             <button
               disabled={busy || !input.trim()}
-              className="rounded-xl bg-primary px-3 text-primary-foreground disabled:opacity-50"
+              className="flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-full bg-emerald-600 text-white disabled:opacity-40"
               aria-label="إرسال"
             >
-              <Send className="h-5 w-5 -scale-x-100" />
+              <ArrowUp className="h-5 w-5" />
             </button>
           </form>
         </div>
