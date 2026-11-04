@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CatalogIdRouteImport } from './routes/catalog.$id'
 import { Route as ApiPublicAssistantRouteImport } from './routes/api/public/assistant'
+import { Route as ApiPublicAssistantStreamRouteImport } from './routes/api/public/assistant-stream'
 import { Route as ApiPublicSpeakRouteImport } from './routes/api/public/speak'
 import { Route as ApiPublicTranscribeRouteImport } from './routes/api/public/transcribe'
 
@@ -36,6 +37,12 @@ const ApiPublicAssistantRoute = ApiPublicAssistantRouteImport.update({
   path: '/api/public/assistant',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAssistantStreamRoute =
+  ApiPublicAssistantStreamRouteImport.update({
+    id: '/api/public/assistant-stream',
+    path: '/api/public/assistant-stream',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicSpeakRoute = ApiPublicSpeakRouteImport.update({
   id: '/api/public/speak',
   path: '/api/public/speak',
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/api/public/assistant': typeof ApiPublicAssistantRoute
+  '/api/public/assistant-stream': typeof ApiPublicAssistantStreamRoute
   '/api/public/speak': typeof ApiPublicSpeakRoute
   '/api/public/transcribe': typeof ApiPublicTranscribeRoute
 }
@@ -60,6 +68,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/api/public/assistant': typeof ApiPublicAssistantRoute
+  '/api/public/assistant-stream': typeof ApiPublicAssistantStreamRoute
   '/api/public/speak': typeof ApiPublicSpeakRoute
   '/api/public/transcribe': typeof ApiPublicTranscribeRoute
 }
@@ -69,6 +78,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/api/public/assistant': typeof ApiPublicAssistantRoute
+  '/api/public/assistant-stream': typeof ApiPublicAssistantStreamRoute
   '/api/public/speak': typeof ApiPublicSpeakRoute
   '/api/public/transcribe': typeof ApiPublicTranscribeRoute
 }
@@ -79,6 +89,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/catalog/$id'
     | '/api/public/assistant'
+    | '/api/public/assistant-stream'
     | '/api/public/speak'
     | '/api/public/transcribe'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +98,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/catalog/$id'
     | '/api/public/assistant'
+    | '/api/public/assistant-stream'
     | '/api/public/speak'
     | '/api/public/transcribe'
   id:
@@ -95,6 +107,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/catalog/$id'
     | '/api/public/assistant'
+    | '/api/public/assistant-stream'
     | '/api/public/speak'
     | '/api/public/transcribe'
   fileRoutesById: FileRoutesById
@@ -104,6 +117,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   CatalogIdRoute: typeof CatalogIdRoute
   ApiPublicAssistantRoute: typeof ApiPublicAssistantRoute
+  ApiPublicAssistantStreamRoute: typeof ApiPublicAssistantStreamRoute
   ApiPublicSpeakRoute: typeof ApiPublicSpeakRoute
   ApiPublicTranscribeRoute: typeof ApiPublicTranscribeRoute
 }
@@ -138,6 +152,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicAssistantRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/assistant-stream': {
+      id: '/api/public/assistant-stream'
+      path: '/api/public/assistant-stream'
+      fullPath: '/api/public/assistant-stream'
+      preLoaderRoute: typeof ApiPublicAssistantStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/speak': {
       id: '/api/public/speak'
       path: '/api/public/speak'
@@ -160,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   CatalogIdRoute: CatalogIdRoute,
   ApiPublicAssistantRoute: ApiPublicAssistantRoute,
+  ApiPublicAssistantStreamRoute: ApiPublicAssistantStreamRoute,
   ApiPublicSpeakRoute: ApiPublicSpeakRoute,
   ApiPublicTranscribeRoute: ApiPublicTranscribeRoute,
 }

@@ -196,9 +196,33 @@ export function AssistantWidget() {
     setBusy(true);
     try {
       const payload = { messages: next.map(({ role, content }) => ({ role, content })) };
-      const res = await ask({ data: payload });
-      setMsgs((m) => [...m, { role: "assistant", content: res.answer, sources: res.sources }]);
-      if (voice) void speak(speechText(res.answer), next.length);
+      const r = await fetch(`/api/public/assistant-stream`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok || !r.body) {
+        const res = await ask({ data: payload });
+        setMsgs((m) => [...m, { role: "assistant", content: res.answer, sources: res.sources }]);
+        if (voice) void speak(speechText(res.answer), next.length);
+        return;
+      }
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let text = "";
+      let spoken = false;
+      setMsgs((m) => [...m, { role: "assistant", content: "" }]);
+      setBusy(false);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += dec.decode(value, { stream: true });
+        const t = text;
+        setMsgs((m) => { const c = [...m]; c[c.length - 1] = { role: "assistant", content: t }; return c; });
+        // Start speaking as soon as the first full sentence is in.
+        if (voice && !spoken && /[.!؟?\n]/.test(t.slice(8))) { spoken = true; void speak(speechText(t), next.length); }
+      }
+      if (voice && !spoken && text) void speak(speechText(text), next.length);
     } catch {
       setMsgs((m) => [...m, { role: "assistant", content: "عذراً، حدث خطأ. حاول مرة أخرى." }]);
     } finally {
